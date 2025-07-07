@@ -270,7 +270,7 @@ agents_flow/
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone [<repository-url>](https://github.com/IamZhenHong/sekai_take_home)
 cd agents_flow
 
 # Create virtual environment
@@ -291,7 +291,7 @@ echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
 ### 3. Data Preparation
 
 Ensure your datasets are in the `datasets/` folder:
-- `contents_with_tags.csv` - Content metadata (content_id, title, intro, generated_tags)
+- `contents.csv` - Content metadata (content_id, title, intro,initial_record)
 - `interactions.csv` - User interactions (user_id, content_id, interaction_count)
 - `users.csv` - User profiles (user_id, user_interest_tags)
 
