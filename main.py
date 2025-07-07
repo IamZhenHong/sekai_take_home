@@ -41,8 +41,16 @@ USERS_CSV = os.path.join(os.path.dirname(__file__), "datasets/users.csv")
 users_df = pd.read_csv(USERS_CSV)
 
 # Load content data
-CONTENT_CSV = os.path.join(os.path.dirname(__file__), "datasets/contents.csv")
-content_df = pd.read_csv(CONTENT_CSV)
+CONTENT_CSV = os.path.join(os.path.dirname(__file__), "contents_with_tags.csv")
+# Check both root directory and datasets directory
+if not os.path.exists(CONTENT_CSV):
+    CONTENT_CSV = os.path.join(os.path.dirname(__file__), "datasets", "contents_with_tags.csv")
+
+try:
+    content_df = pd.read_csv(CONTENT_CSV)
+except FileNotFoundError:
+    print(f"⚠️  Warning: {CONTENT_CSV} not found. Creating empty DataFrame.")
+    content_df = pd.DataFrame(columns=['content_id', 'title', 'intro', 'generated_tags'])
 
 class RecommendationRequest(BaseModel):
     user_id: str

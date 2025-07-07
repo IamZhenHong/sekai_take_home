@@ -246,7 +246,7 @@ agents_flow/
 │   ├── evaluation_agent.py          # Quality evaluation & taste profiling
 │   └── optimiser_agent.py          # Prompt optimization
 ├── datasets/                        # Data storage
-│   ├── contents.csv                 # Content metadata & tags
+│   ├── contents_with_tags.csv       # Content metadata & tags
 │   ├── interactions.csv             # User-content interactions
 │   └── users.csv                   # User profiles & interest tags
 ├── embeddings/                      # Vector database utilities
@@ -291,7 +291,7 @@ echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
 ### 3. Data Preparation
 
 Ensure your datasets are in the `datasets/` folder:
-- `contents.csv` - Content metadata (content_id, title, intro, generated_tags)
+- `contents_with_tags.csv` - Content metadata (content_id, title, intro, generated_tags)
 - `interactions.csv` - User interactions (user_id, content_id, interaction_count)
 - `users.csv` - User profiles (user_id, user_interest_tags)
 
@@ -321,8 +321,10 @@ These scripts will automatically:
 If you prefer to run processes manually:
 
 ```bash
-# Generate tags for content
-python batch_generate_tags.py
+# Generate tags for content (with options)
+python batch_generate_tags.py                    # Generate tags for items without tags
+python batch_generate_tags.py --override         # Regenerate all tags (override existing)
+python batch_generate_tags.py --help             # Show all available options
 
 # Create embeddings
 python embeddings/embed_contents_advanced.py

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Advanced script to embed combined contents from contents.csv using chroma_utils.py
+Advanced script to embed combined contents from contents_with_tags.csv using chroma_utils.py
 Creates one embedding per content item by concatenating title, intro, and initial_record
 """
 
@@ -266,8 +266,8 @@ def main():
     Main function with command line argument support
     """
     parser = argparse.ArgumentParser(description='Embed combined contents from CSV using chroma_utils')
-    parser.add_argument('--csv-file', default='datasets/contents.csv', 
-                       help='Path to the CSV file (default: datasets/contents.csv)')
+    parser.add_argument('--csv-file', default='datasets/contents_with_tags.csv', 
+                       help='Path to the CSV file (default: datasets/contents_with_tags.csv)')
     parser.add_argument('--collection-name', default='sekai_content_combined',
                        help='Name of the ChromaDB collection (default: sekai_content_combined)')
     parser.add_argument('--delete-existing', action='store_true',

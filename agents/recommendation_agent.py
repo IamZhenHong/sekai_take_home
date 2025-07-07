@@ -24,14 +24,27 @@ from embeddings.chroma_utils import OpenAIEmbeddingFunction
 load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
-# Load dataset once and preprocess
+# Load dataset lazily to avoid import-time file access
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-contents_path = os.path.join(base_dir, "datasets", "contents.csv")
-contents = pd.read_csv(contents_path)  # Assumes columns: content_id, title, intro, generated_tags
+# Check both root directory and datasets directory
+contents_path = os.path.join(base_dir, "contents_with_tags.csv")
+if not os.path.exists(contents_path):
+    contents_path = os.path.join(base_dir, "datasets", "contents_with_tags.csv")
+
+def get_contents():
+    """Get contents DataFrame, loading it if not already loaded"""
+    if not hasattr(get_contents, '_contents'):
+        try:
+            get_contents._contents = pd.read_csv(contents_path)
+        except FileNotFoundError:
+            print(f"⚠️  Warning: {contents_path} not found. Creating empty DataFrame.")
+            get_contents._contents = pd.DataFrame(columns=['content_id', 'title', 'intro', 'generated_tags'])
+    return get_contents._contents
 
 # Preprocess and cache tag data for faster matching
 def preprocess_tags():
     """Preprocess tags for faster matching"""
+    contents = get_contents()
     tag_cache = {}
     for idx, row in contents.iterrows():
         content_id = row['content_id']
@@ -49,8 +62,12 @@ def preprocess_tags():
     
     return tag_cache
 
-# Initialize tag cache
-TAG_CACHE = preprocess_tags()
+# Initialize tag cache lazily
+def get_tag_cache():
+    """Get tag cache, initializing it if not already initialized"""
+    if not hasattr(get_tag_cache, '_tag_cache'):
+        get_tag_cache._tag_cache = preprocess_tags()
+    return get_tag_cache._tag_cache
 
 # Cache ChromaDB collection
 @lru_cache(maxsize=1)
@@ -72,6 +89,9 @@ from difflib import SequenceMatcher
 def fuzzy_tag_match(user_tags: List[str], threshold=0.75, min_results=50, max_results=70) -> List[int]:
     """Optimized fuzzy tag matching with fallback floor and tail extension"""
     print(f"🔍 Running optimized fuzzy_tag_match with tags: {user_tags}")
+    
+    # Get contents DataFrame
+    contents = get_contents()
     
     # Normalize user tags
     user_tag_set = {tag.lower().strip() for tag in user_tags}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to embed contents from contents.csv using chroma_utils.py
+Script to embed contents from contents_with_tags.csv using chroma_utils.py
 """
 
 import pandas as pd
@@ -9,19 +9,22 @@ from .chroma_utils import embed_and_store_content
 
 def main():
     """
-    Main function to load contents.csv and embed them using chroma_utils
+    Main function to load contents_with_tags.csv and embed them using chroma_utils
     """
     print("🚀 Starting content embedding process...")
     
-    # Check if contents.csv exists
-    if not os.path.exists("datasets/contents.csv"):
-        print("❌ Error: contents.csv not found in current directory")
-        return
+    # Check if contents_with_tags.csv exists in current directory or datasets directory
+    csv_path = "contents_with_tags.csv"
+    if not os.path.exists(csv_path):
+        csv_path = "datasets/contents_with_tags.csv"
+        if not os.path.exists(csv_path):
+            print("❌ Error: contents_with_tags.csv not found in current directory or datasets/")
+            return
     
     try:
         # Load the CSV file
-        print("📖 Loading contents.csv...")
-        content_df = pd.read_csv("datasets/contents.csv")
+        print(f"📖 Loading {csv_path}...")
+        content_df = pd.read_csv(csv_path)
         
         print(f"✅ Successfully loaded {len(content_df)} content entries")
         print(f"📊 Columns found: {list(content_df.columns)}")

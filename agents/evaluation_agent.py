@@ -17,21 +17,40 @@ from difflib import SequenceMatcher
 
 llm = init_chat_model("openai:o4-mini")
 # llm = init_chat_model("openai:gpt-4.1-mini")
-# --- Load datasets ---
+# --- Load datasets lazily to avoid import-time file access ---
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-contents_path = os.path.join(base_dir, "datasets/contents.csv")
+# Check both root directory and datasets directory for contents_with_tags.csv
+contents_path = os.path.join(base_dir, "contents_with_tags.csv")
+if not os.path.exists(contents_path):
+    contents_path = os.path.join(base_dir, "datasets", "contents_with_tags.csv")
 interactions_path = os.path.join(base_dir, "datasets/interactions.csv")
 
-contents_df = pd.read_csv(contents_path)
-interactions_df = pd.read_csv(interactions_path)
+def get_contents_df():
+    """Get contents DataFrame, loading it if not already loaded"""
+    if not hasattr(get_contents_df, '_contents_df'):
+        try:
+            get_contents_df._contents_df = pd.read_csv(contents_path)
+            get_contents_df._contents_df["content_id"] = get_contents_df._contents_df["content_id"].astype(str)
+        except FileNotFoundError:
+            print(f"⚠️  Warning: {contents_path} not found. Creating empty DataFrame.")
+            get_contents_df._contents_df = pd.DataFrame(columns=['content_id', 'title', 'intro', 'generated_tags'])
+    return get_contents_df._contents_df
 
-# Fix any type issues with content_id columns
-contents_df["content_id"] = contents_df["content_id"].astype(str)
-interactions_df["content_id"] = interactions_df["content_id"].astype(str)
+def get_interactions_df():
+    """Get interactions DataFrame, loading it if not already loaded"""
+    if not hasattr(get_interactions_df, '_interactions_df'):
+        try:
+            get_interactions_df._interactions_df = pd.read_csv(interactions_path)
+            get_interactions_df._interactions_df["content_id"] = get_interactions_df._interactions_df["content_id"].astype(str)
+        except FileNotFoundError:
+            print(f"⚠️  Warning: {interactions_path} not found. Creating empty DataFrame.")
+            get_interactions_df._interactions_df = pd.DataFrame(columns=['user_id', 'content_id', 'interaction_count'])
+    return get_interactions_df._interactions_df
 
 # Pre-compute and cache tag sets for faster processing
 def precompute_tag_sets():
     """Pre-compute tag sets for faster overlap calculations"""
+    contents_df = get_contents_df()
     print("🔄 Pre-computing tag sets for evaluation optimization...")
     tag_sets = {}
     for idx, row in contents_df.iterrows():
@@ -50,8 +69,12 @@ def precompute_tag_sets():
     print(f"✅ Pre-computed tag sets for {len(tag_sets)} content items")
     return tag_sets
 
-# Initialize pre-computed tag sets
-TAG_SETS = precompute_tag_sets()
+# Initialize pre-computed tag sets lazily
+def get_tag_sets():
+    """Get tag sets, initializing them if not already initialized"""
+    if not hasattr(get_tag_sets, '_tag_sets'):
+        get_tag_sets._tag_sets = precompute_tag_sets()
+    return get_tag_sets._tag_sets
 
 # Cache ChromaDB collection
 @lru_cache(maxsize=1)
@@ -126,6 +149,7 @@ def get_ground_truth_list(state: EvaluationState) -> EvaluationState:
         raise ValueError("State must contain 'user_id'.")
 
     # Use vectorized operations for faster filtering
+    interactions_df = get_interactions_df()
     user_interactions = interactions_df[
         interactions_df["user_id"].astype(str).str.strip() == user_id_str
     ]
@@ -149,8 +173,9 @@ def get_ground_truth_list(state: EvaluationState) -> EvaluationState:
         tag_set = set([t.lower().strip() for t in full_tags])
 
         # Optimized fuzzy overlap scorer using pre-computed tag sets
+        tag_sets = get_tag_sets()
         def tag_overlap_fast(content_id: str) -> int:
-            content_tags = TAG_SETS.get(content_id, set())
+            content_tags = tag_sets.get(content_id, set())
             score = 0
             for utag in tag_set:
                 for ctag in content_tags:
@@ -160,6 +185,7 @@ def get_ground_truth_list(state: EvaluationState) -> EvaluationState:
             return score
 
         # Use vectorized operations for faster scoring
+        contents_df = get_contents_df()
         candidate_df = contents_df.copy()
         candidate_df['score'] = candidate_df['content_id'].apply(tag_overlap_fast)
         candidate_df = candidate_df.sort_values("score", ascending=False)
@@ -197,18 +223,19 @@ def calculate_tag_overlap(state: EvaluationState) -> dict:
     ground_truth_ids = set(map(str, state["ground_truth_list"]))
 
     # Use pre-computed tag sets for faster processing
+    tag_sets = get_tag_sets()
     rec_tags = set()
     gt_tags = set()
 
     # Collect tags from recommended content
     for content_id in recommended_ids:
-        if content_id in TAG_SETS:
-            rec_tags.update(TAG_SETS[content_id])
+        if content_id in tag_sets:
+            rec_tags.update(tag_sets[content_id])
 
     # Collect tags from ground truth content
     for content_id in ground_truth_ids:
-        if content_id in TAG_SETS:
-            gt_tags.update(TAG_SETS[content_id])
+        if content_id in tag_sets:
+            gt_tags.update(tag_sets[content_id])
 
     if not gt_tags:
         return {

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Advanced script to embed contents from contents.csv using chroma_utils.py
+Advanced script to embed contents from contents_with_tags.csv using chroma_utils.py
 Provides additional options and better error handling
 """
 
 import pandas as pd
 import os
 import argparse
+import sys
 from .chroma_utils import embed_and_store_content, ensure_embeddings_exist, chroma_client, get_openai_embedding_function
 
 def validate_csv_structure(content_df):
@@ -198,8 +199,8 @@ def main():
     Main function with command line argument support
     """
     parser = argparse.ArgumentParser(description='Embed contents from CSV using chroma_utils')
-    parser.add_argument('--csv-file', default='datasets/contents.csv', 
-                       help='Path to the CSV file (default: datasets/contents.csv)')
+    parser.add_argument('--csv-file', default='datasets/contents_with_tags.csv', 
+                       help='Path to the CSV file (default: datasets/contents_with_tags.csv)')
     parser.add_argument('--collection-name', default='sekai_content',
                        help='Name of the ChromaDB collection (default: sekai_content)')
     parser.add_argument('--delete-existing', action='store_true',

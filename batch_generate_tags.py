@@ -97,7 +97,7 @@ Initial Record: {content.get('initial_record', '')}
         fallback_tags = ['general', 'roleplay']
         return [fallback_tags for _ in content_batch]
 
-def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int = 0, batch_size: int = 50):
+def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int = 0, batch_size: int = 50, override_existing: bool = False):
     """
     Batch generate tags for all content in the CSV file.
     
@@ -106,6 +106,7 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
         output_path: Path to save the updated CSV (if None, overwrites original)
         start_index: Starting index for processing (useful for resuming)
         batch_size: Number of items to process in one batch
+        override_existing: If True, regenerate tags for items that already have tags
     """
     
     # Load the CSV
@@ -114,19 +115,52 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
     if output_path is None:
         output_path = csv_path
     
-    print(f"Processing {len(df)} content items...")
+    total_items = len(df)
+    print(f"Processing {total_items} content items...")
     print(f"Starting from index {start_index}")
+    print(f"Batch size: {batch_size}")
+    print(f"Override existing tags: {override_existing}")
+    print(f"Estimated batches: {(total_items - start_index + batch_size - 1) // batch_size}")
+    
+    # Count items that need processing
+    items_to_process = []
+    for idx in range(start_index, len(df)):
+        row = df.iloc[idx]
+        existing_tags = row.get('generated_tags', '')
+        
+        # Check if item needs processing
+        needs_processing = (
+            pd.isna(existing_tags) or 
+            existing_tags == '' or 
+            existing_tags == '[]' or 
+            existing_tags == "['']" or
+            override_existing
+        )
+        
+        if needs_processing:
+            items_to_process.append(idx)
+    
+    print(f"📊 Items that need tag generation: {len(items_to_process)}/{total_items}")
+    if not override_existing:
+        skipped_count = total_items - len(items_to_process)
+        if skipped_count > 0:
+            print(f"⏭️  Skipping {skipped_count} items that already have tags")
     
     # Process content in batches
-    for i in range(start_index, len(df), batch_size):
-        batch_end = min(i + batch_size, len(df))
-        print(f"\nProcessing batch {i//batch_size + 1}: items {i} to {batch_end-1}")
+    processed_count = 0
+    for i in range(0, len(items_to_process), batch_size):
+        batch_end = min(i + batch_size, len(items_to_process))
+        batch_indices = items_to_process[i:batch_end]
+        batch_num = i//batch_size + 1
+        total_batches = (len(items_to_process) + batch_size - 1) // batch_size
+        
+        print(f"\n🔄 Processing batch {batch_num}/{total_batches}: items {i} to {batch_end-1}")
+        print(f"📊 Progress: {processed_count}/{len(items_to_process)} items processed ({processed_count/len(items_to_process)*100:.1f}%)")
         
         # Prepare batch data
         batch_data = []
-        batch_indices = []
         
-        for idx in range(i, batch_end):
+        for idx in batch_indices:
             row = df.iloc[idx]
             batch_data.append({
                 'title': row['title'],
@@ -134,9 +168,8 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
                 'character_list': row.get('character_list', ''),
                 'initial_record': row.get('initial_record', '')
             })
-            batch_indices.append(idx)
         
-        print(f"Generating tags for {len(batch_data)} items in batch...")
+        print(f"🏷️  Generating tags for {len(batch_data)} items in batch...")
         
         # Generate tags for the entire batch
         tag_lists = generate_tags_for_batch(batch_data)
@@ -144,16 +177,28 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
         # Apply tags to each item in the batch
         for idx, tags in zip(batch_indices, tag_lists):
             row = df.iloc[idx]
-            print(f"Item {idx}: {row['title'][:50]}...")
-            print(f"Generated tags: {tags}")
+            title_preview = row['title'][:50] + "..." if len(row['title']) > 50 else row['title']
+            
+            # Check if this item already had tags
+            existing_tags = row.get('generated_tags', '')
+            had_existing = not (pd.isna(existing_tags) or existing_tags == '' or existing_tags == '[]' or existing_tags == "['']")
+            
+            if had_existing and override_existing:
+                print(f"  🔄 Item {idx}: {title_preview} (overriding existing tags)")
+            else:
+                print(f"  📝 Item {idx}: {title_preview}")
+            
+            print(f"  🏷️  Generated tags: {tags}")
             
             # Convert to the same format as existing tags (string representation of list)
             tags_str = str(tags)
             df.at[idx, 'generated_tags'] = tags_str
+            processed_count += 1
         
         # Save progress after each batch
         df.to_csv(output_path, index=False)
-        print(f"Saved progress to {output_path}")
+        print(f"💾 Saved progress to {output_path}")
+        print(f"✅ Batch {batch_num} completed!")
     
     # Double-check and regenerate tags for empty entries
     print("\n" + "="*50)
@@ -178,14 +223,18 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
             print("✅ All content now has tags!")
             break
             
-        print(f"\nAttempt {attempt + 1}: Found {len(empty_indices)} items with empty tags")
+        print(f"\n🔄 Attempt {attempt + 1}/{max_retries}: Found {len(empty_indices)} items with empty tags")
         
         # Process empty items in batches
         batch_size_retry = min(10, len(empty_indices))  # Smaller batches for retry
+        total_retry_batches = (len(empty_indices) + batch_size_retry - 1) // batch_size_retry
         
         for batch_start in range(0, len(empty_indices), batch_size_retry):
             batch_end = min(batch_start + batch_size_retry, len(empty_indices))
             batch_indices = empty_indices[batch_start:batch_end]
+            retry_batch_num = batch_start // batch_size_retry + 1
+            
+            print(f"  📦 Retry batch {retry_batch_num}/{total_retry_batches}: processing {len(batch_indices)} items")
             
             # Prepare batch data for empty items
             batch_data = []
@@ -198,7 +247,7 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
                     'initial_record': row.get('initial_record', '')
                 })
             
-            print(f"Regenerating tags for {len(batch_data)} empty items in batch...")
+            print(f"  🏷️  Regenerating tags for {len(batch_data)} empty items...")
             
             # Generate tags for the batch
             tag_lists = generate_tags_for_batch(batch_data)
@@ -206,7 +255,8 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
             # Apply tags to each item
             for idx, tags in zip(batch_indices, tag_lists):
                 row = df.iloc[idx]
-                print(f"Item {idx}: {row['title'][:50]}...")
+                title_preview = row['title'][:50] + "..." if len(row['title']) > 50 else row['title']
+                print(f"    📝 Item {idx}: {title_preview}")
                 
                 # Ensure we have at least one tag
                 if not tags:
@@ -224,11 +274,11 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
                 df.at[idx, 'generated_tags'] = tags_str
                 empty_count += 1
                 
-                print(f"Generated tags: {tags}")
+                print(f"    🏷️  Generated tags: {tags}")
         
         # Save after each retry attempt
         df.to_csv(output_path, index=False)
-        print(f"Saved progress after attempt {attempt + 1}")
+        print(f"  💾 Saved progress after attempt {attempt + 1}")
     
     print(f"\nCompleted! Updated CSV saved to {output_path}")
     
@@ -247,24 +297,42 @@ def batch_generate_tags(csv_path: str, output_path: str = None, start_index: int
 
 def main():
     """Main function to run the tag generation."""
+    import argparse
+    
+    # Set up command line arguments
+    parser = argparse.ArgumentParser(description='Batch generate tags for content')
+    parser.add_argument('--input', '-i', default="datasets/contents.csv", 
+                       help='Input CSV file path (default: datasets/contents.csv)')
+    parser.add_argument('--output', '-o', default="datasets/contents_with_tags.csv", 
+                       help='Output CSV file path (default: datasets/contents_with_tags.csv)')
+    parser.add_argument('--start-index', '-s', type=int, default=0, 
+                       help='Starting index for processing (default: 0)')
+    parser.add_argument('--batch-size', '-b', type=int, default=20, 
+                       help='Number of items to process in one batch (default: 20)')
+    parser.add_argument('--override', action='store_true', 
+                       help='Override existing tags (default: False)')
+    
+    args = parser.parse_args()
     
     # Configuration
-    csv_path = "datasets/contents.csv"
-    output_path = "contents_with_tags.csv"  # Save to new file to be safe
+    csv_path = args.input
+    output_path = args.output
+    
+    # If output path is the default, put it in datasets directory
+    if output_path == "contents_with_tags.csv":
+        output_path = "datasets/contents_with_tags.csv"
     
     print("Starting batch tag generation...")
     print(f"Input file: {csv_path}")
     print(f"Output file: {output_path}")
-    
-    # You can customize these parameters:
-    start_index = 0  # Start from beginning
-    batch_size = 20  # Process 20 items at a time
+    print(f"Override existing tags: {args.override}")
     
     batch_generate_tags(
         csv_path=csv_path,
         output_path=output_path,
-        start_index=start_index,
-        batch_size=batch_size
+        start_index=args.start_index,
+        batch_size=args.batch_size,
+        override_existing=args.override
     )
 
 if __name__ == "__main__":
