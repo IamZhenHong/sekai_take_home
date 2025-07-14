@@ -9,6 +9,7 @@ import pandas as pd
 import os
 import json
 import asyncio
+import logging
 
 app = FastAPI(
     title="Recommendation Flow API",
@@ -49,7 +50,7 @@ if not os.path.exists(CONTENT_CSV):
 try:
     content_df = pd.read_csv(CONTENT_CSV)
 except FileNotFoundError:
-    print(f"⚠️  Warning: {CONTENT_CSV} not found. Creating empty DataFrame.")
+    logger.warning(f"⚠️  Warning: {CONTENT_CSV} not found. Creating empty DataFrame.")
     content_df = pd.DataFrame(columns=['content_id', 'title', 'intro', 'generated_tags'])
 
 class RecommendationRequest(BaseModel):
@@ -294,18 +295,18 @@ async def health_check():
 async def get_content_batch(content_ids: str):
     """Get multiple content items by IDs (comma-separated)"""
     try:
-        print(f"Received content_ids: {content_ids}")
-        print(f"Content CSV shape: {content_df.shape}")
-        print(f"Content CSV columns: {content_df.columns.tolist()}")
-        print(f"Sample content_ids in CSV: {content_df['content_id'].head().tolist()}")
+        logger.debug(f"Received content_ids: {content_ids}")
+        logger.debug(f"Content CSV shape: {content_df.shape}")
+        logger.debug(f"Content CSV columns: {content_df.columns.tolist()}")
+        logger.debug(f"Sample content_ids in CSV: {content_df['content_id'].head().tolist()}")
         
         ids = [id.strip() for id in content_ids.split(",")]
-        print(f"Looking for IDs: {ids}")
+        logger.debug(f"Looking for IDs: {ids}")
         
         results = []
         
         for content_id in ids:
-            print(f"Searching for content_id: {content_id}")
+            logger.debug(f"Searching for content_id: {content_id}")
             # Try different ways to match
             row = content_df.loc[content_df["content_id"].astype(str) == str(content_id)]
             if row.empty:
@@ -326,9 +327,9 @@ async def get_content_batch(content_ids: str):
                     "generated_tags": row.iloc[0].get("generated_tags", "")
                 }
                 results.append(result)
-                print(f"Found content: {result['title']}")
+                logger.debug(f"Found content: {result['title']}")
             else:
-                print(f"Content ID {content_id} not found")
+                logger.debug(f"Content ID {content_id} not found")
         
         return {"content": results}
     except Exception as e:
@@ -356,8 +357,8 @@ async def get_content(content_id: str):
 @app.websocket("/ws/test")
 async def websocket_test(websocket: WebSocket):
     """Simple test WebSocket endpoint"""
-    print("Test WebSocket connection attempt")
-    print(f"Headers: {dict(websocket.headers)}")
+    logger.debug("Test WebSocket connection attempt")
+    logger.debug(f"Headers: {dict(websocket.headers)}")
     await websocket.accept()
     await websocket.send_text("Test connection successful!")
     await websocket.close()
@@ -365,47 +366,47 @@ async def websocket_test(websocket: WebSocket):
 @app.websocket("/ws/recommend")
 async def websocket_recommend(websocket: WebSocket):
     # Debug: Print all headers
-    print(f"WebSocket headers: {dict(websocket.headers)}")
+    logger.debug(f"WebSocket headers: {dict(websocket.headers)}")
     
     # Check origin for CORS
     origin = websocket.headers.get("origin")
-    print(f"Origin: {origin}")
+    logger.debug(f"Origin: {origin}")
     
     # For development, allow all connections
     # In production, you'd want to check the origin properly
     await websocket.accept()
-    print("WebSocket accepted!")
+    logger.debug("WebSocket accepted!")
     
     try:
-        print("Waiting for message...")
+        logger.debug("Waiting for message...")
         data = await websocket.receive_text()
-        print(f"Received data: {data}")
+        logger.debug(f"Received data: {data}")
         request = json.loads(data)
         
         # Validate required user_id
         user_id = request.get("user_id")
         if not user_id:
-            print("No user_id provided")
+            logger.error("No user_id provided")
             await websocket.send_text(json.dumps({"error": "user_id is required"}))
             await websocket.close()
             return
         
-        print(f"Processing request for user_id: {user_id}")
+        logger.debug(f"Processing request for user_id: {user_id}")
         
         # Get user data from CSV
         row = users_df.loc[users_df["user_id"].astype(str) == str(user_id)]
         if row.empty:
-            print(f"User {user_id} not found")
+            logger.error(f"User {user_id} not found")
             await websocket.send_text(json.dumps({"error": f"User {user_id} not found in users.csv"}))
             await websocket.close()
             return
         
-        print("User found, processing...")
+        logger.debug("User found, processing...")
         
         # Get full interest tags from the user
         full_tags = [t.strip() for t in row.iloc[0]["user_interest_tags"].split(",") if t.strip()]
         if not full_tags:
-            print(f"User {user_id} has no tags")
+            logger.error(f"User {user_id} has no tags")
             await websocket.send_text(json.dumps({"error": f"User {user_id} has no interest tags"}))
             await websocket.close()
             return
@@ -452,7 +453,7 @@ async def websocket_recommend(websocket: WebSocket):
             "total_time": 0.0
         }
         
-        print("Starting recommendation process...")
+        logger.debug("Starting recommendation process...")
         
         # Send initial setup message
         await websocket.send_text(json.dumps({
@@ -552,18 +553,24 @@ async def websocket_recommend(websocket: WebSocket):
             "total_iterations": iteration_count,
             "total_execution_time": round(total_execution_time, 2)
         }
-        
         await websocket.send_text(json.dumps(final_state))
-        print("WebSocket process completed successfully")
+        logger.debug("WebSocket process completed successfully")
         await websocket.close()
         
     except WebSocketDisconnect:
-        print("WebSocket disconnected by client")
+        logger.info("WebSocket disconnected by client")
         pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error: {e}")
         await websocket.send_text(json.dumps({"type": "error", "error": str(e)}))
         await websocket.close()
 
 if __name__ == "__main__":
+    # Configure logging
+    VERBOSE = os.getenv("VERBOSE", "0") == "1"
+    logging.basicConfig(
+        level=logging.DEBUG if VERBOSE else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s"
+    )
+    logger = logging.getLogger(__name__)
     uvicorn.run(app, host="0.0.0.0", port=8000) 
