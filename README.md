@@ -301,9 +301,11 @@ We provide convenient startup scripts that handle everything automatically:
 
 #### Option A: Python Script (Recommended)
 ```bash
+cd frontend
+npm install
+cd ..
 python start_dev.py
 ```
-
 #### Option B: Shell Script
 ```bash
 ./start_dev.sh
